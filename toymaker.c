@@ -22,7 +22,7 @@ int main(int argc, char *argv[]) {
         switch(ch) {
             case 'l': return 0; break;
             case 'i': return 0; break;
-            default: fprintf("Incorrect argument.\n", stderr);
+            default: fprintf(stderr, "Incorrect argument.\n");
         }
     }
 return 0;
