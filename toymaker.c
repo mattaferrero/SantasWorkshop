@@ -30,6 +30,7 @@ int main(int argc, char *argv[]) {
     int                 fd = 0;
     int                 status = 0;
 
+    /* This variable grouping will be used for *mptr's typecastings. */
     unsigned char       *temp = NULL;
 
     unsigned char       magic_num[EI_NIDENT];
@@ -57,6 +58,12 @@ int main(int argc, char *argv[]) {
     status = fstat(fd, &finfo_buf);
     if (status == -1) {
         fprintf(stderr, "Error: Could not grab file status. Terminating.\n");
+        
+        if (close(fd) == -1) {
+            fprintf(stderr, "Error: Could not close file descriptor after fstat() call. Terminating.\n");
+            _exit(1); /* Something has gone horribly, horribly wrong somehow. */
+        }
+        return 1;
     }
 
     /* 
@@ -66,13 +73,18 @@ int main(int argc, char *argv[]) {
      */
     mptr = mmap(NULL, finfo_buf.st_size, PROT_EXEC, MAP_PRIVATE, fd, 0); /* <-- this needs to be fixed stat. grab file data first. */
     if (mptr == MAP_FAILED) {
-        fprintf(stderr, "Mapping failed. Terminating.\n");
+        fprintf(stderr, "Error: Mapping failed. Terminating.\n");
+
+        if (close(fd) == -1) {
+            fprintf(stderr, "Error: Could not close file descriptor after mmap() call. Terminating.\n");
+            _exit(1);
+        }
         return 1;
     }
 
     /* We can close the file descriptor without invaliding the mapping. */
     if (close(fd) == -1) {
-        fprintf(stderr, "Could not close file descriptor. Terminating.\n");
+        fprintf(stderr, "Error: Could not close file descriptor. Terminating.\n");
         return 1;
     }
 
@@ -84,7 +96,29 @@ int main(int argc, char *argv[]) {
         ctr++;
     }
 
-    fprintf(stdout, "Magic number: 0x%x\n", magic_num[0]); /* should print out 0x7f <-- Nope. */
+    if (magic_num[0] != ELFMAG0 || magic_num[1] != ELFMAG1 || magic_num[2] != ELFMAG2 || magic_num[3] != ELFMAG3) {
+        fprintf(stderr, "Error: Target file not ELF object. Terminating.\n");
+        return 1;
+    }
+
+    if (magic_num[4] == ELFCLASSNONE) {
+        fprintf(stderr, "Error: Target ELF file invalid or corrupted class. Terminating.\n");
+        return 1;
+    }
+
+    else if (magic_num[4] == ELFCLASS32) {
+        /* load header into 32 bit struct */
+    }
+
+    else if (magic_num[4] == ELFCLASS64) {
+        /* Load header into 64 bit struct */
+    }
+
+    
+    if (munmap(mptr, finfo_buf.st_size) == -1) {
+        fprintf(stderr, "Error: Could not unmap file. Terminating.\n");
+        return 1;
+    }
 
 return 0;
 }
