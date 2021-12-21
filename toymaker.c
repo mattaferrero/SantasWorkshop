@@ -1,4 +1,5 @@
-/* The Toymaker: a command-line utility designed for parsing and editing linux ELF binaries 
+/* 
+ * The Toymaker: a command-line utility designed for parsing and editing linux ELF binaries 
  *
  * Author (Very Important, Must Include in Source): Matt A. Ferrero.
  * 
@@ -24,6 +25,9 @@
 
 #define MAX_ARGS        2
 
+int elf32_object(void *ptr, Elf32_Ehdr hdr); /* void *ptr needs to be mmap()'s return val. */
+int elf64_object(void *ptr, Elf64_Ehdr hdr);
+
 int main(int argc, char *argv[]) {  
 
     int                 ctr = 0;
@@ -32,6 +36,8 @@ int main(int argc, char *argv[]) {
 
     /* This variable grouping will be used for *mptr's typecastings. */
     unsigned char       *temp = NULL;
+    Elf32_Ehdr          *tmp32_hdr = NULL;
+    Elf64_Ehdr          *tmp64_hdr = NULL;
 
     unsigned char       magic_num[EI_NIDENT];
     memset(&magic_num[0], 0, sizeof(magic_num));
@@ -107,11 +113,17 @@ int main(int argc, char *argv[]) {
     }
 
     else if (magic_num[4] == ELFCLASS32) {
-        /* load header into 32 bit struct */
+        tmp32_hdr = mptr;
+        Elf32_hdr = *tmp32_hdr;  
+        mptr = 0x0; 
+        elf32_object(&mptr, Elf32_hdr);        
     }
 
     else if (magic_num[4] == ELFCLASS64) {
-        /* Load header into 64 bit struct */
+        tmp64_hdr = mptr;
+        Elf64_hdr = *tmp64_hdr;
+        mptr = 0x0;
+        elf64_object(&mptr, Elf64_hdr);
     }
 
     
@@ -119,6 +131,16 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error: Could not unmap file. Terminating.\n");
         return 1;
     }
+
+return 0;
+}
+
+int elf32_object(void *mptr, Elf32_Ehdr hdr) {
+
+return 0;
+}
+
+int elf64_object(void *mptr, Elf64_Ehdr hdr) {
 
 return 0;
 }
