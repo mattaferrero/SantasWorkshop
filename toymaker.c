@@ -25,8 +25,8 @@
 
 #define MAX_ARGS        2
 
-int elf32_object(void *ptr, Elf32_Ehdr hdr); /* void *ptr needs to be mmap()'s return val. */
-int elf64_object(void *ptr, Elf64_Ehdr hdr);
+int elf32_object(void *ptr, Elf32_Ehdr *hdr); /* void *ptr needs to be mmap()'s return val. */
+int elf64_object(void *ptr, Elf64_Ehdr *hdr);
 
 int main(int argc, char *argv[]) {  
 
@@ -36,15 +36,13 @@ int main(int argc, char *argv[]) {
 
     /* This variable grouping will be used for *mptr's typecastings. */
     unsigned char       *temp = NULL;
-    Elf32_Ehdr          *tmp32_hdr = NULL;
-    Elf64_Ehdr          *tmp64_hdr = NULL;
+    Elf32_Ehdr          *Elf32_hdr = NULL;
+    Elf64_Ehdr          *Elf64_hdr = NULL;
 
     unsigned char       magic_num[EI_NIDENT];
     memset(&magic_num[0], 0, sizeof(magic_num));
 
     struct  stat        finfo_buf = {0};
-    Elf32_Ehdr          Elf32_hdr = {0};
-    Elf64_Ehdr          Elf64_hdr = {0};
 
     void                *mptr = NULL;
 
@@ -113,19 +111,14 @@ int main(int argc, char *argv[]) {
     }
 
     else if (magic_num[4] == ELFCLASS32) {
-        tmp32_hdr = mptr;
-        Elf32_hdr = *tmp32_hdr;  
-        mptr = 0x0; 
-        elf32_object(&mptr, Elf32_hdr);        
+        Elf32_hdr = mptr;        
+        elf32_object(mptr, Elf32_hdr);        
     }
 
     else if (magic_num[4] == ELFCLASS64) {
-        tmp64_hdr = mptr;
-        Elf64_hdr = *tmp64_hdr;
-        mptr = 0x0;
-        elf64_object(&mptr, Elf64_hdr);
+        Elf64_hdr = mptr;        
+        elf64_object(mptr, Elf64_hdr);
     }
-
     
     if (munmap(mptr, finfo_buf.st_size) == -1) {
         fprintf(stderr, "Error: Could not unmap file. Terminating.\n");
@@ -135,12 +128,12 @@ int main(int argc, char *argv[]) {
 return 0;
 }
 
-int elf32_object(void *mptr, Elf32_Ehdr hdr) {
+int elf32_object(void *mptr, Elf32_Ehdr *hdr) {
 
 return 0;
 }
 
-int elf64_object(void *mptr, Elf64_Ehdr hdr) {
+int elf64_object(void *mptr, Elf64_Ehdr *hdr) {
 
 return 0;
 }
