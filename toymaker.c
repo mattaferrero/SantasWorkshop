@@ -50,11 +50,7 @@ int main(int argc, char *argv[]) {
     int                 status = 0; /* fstat()'s return val */
     int                 sane = 0; /* ehdr_sane_check()'s return val */
 
-    /* This variable grouping will be used for *mptr's typecastings. 
-    Elf32_Ehdr          *Elf32_hdr = NULL;
-    Elf64_Ehdr          *Elf64_hdr = NULL;
-*/
-    /*
+    /* To do: remember what i was gonna do with this here. 
     unsigned char       magic_num[EI_NIDENT];
     memset(&magic_num[0], 0, sizeof(magic_num));
 */
@@ -67,6 +63,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error: exceeded maximum number of arguments. Please man toymaker.\n");
         return 1;
     }
+    
 
     /* mmap() requires a file descriptor, so we are using open() instead for convenience instead of fopen(). */
     fd = open(argv[1], O_RDWR); /* O_RDWR read/write. other flags are read only/write only. */
@@ -120,37 +117,6 @@ int main(int argc, char *argv[]) {
             elf64_object(mptr);
             break; 
     }
-
-    /*
-    
-    This will be done in ehdr_sane_check() instead.
-    tmp = mptr;
-
-    while (ctr < EI_NIDENT) {
-        magic_num[ctr] = tmp[ctr];
-        ctr++;
-    }
-
-    if (magic_num[0] != ELFMAG0 || magic_num[1] != ELFMAG1 || magic_num[2] != ELFMAG2 || magic_num[3] != ELFMAG3) {
-        fprintf(stderr, "Error: Target file not ELF object.\n");
-        return 1;
-    }
-
-    if (magic_num[4] == ELFCLASSNONE) {
-        fprintf(stderr, "Error: Target ELF file invalid or corrupted class.\n");
-        return 1;
-    }
-
-    else if (magic_num[4] == ELFCLASS32) {
-        Elf32_hdr = mptr;        
-        elf32_object(mptr, Elf32_hdr);        
-    }
-
-    else if (magic_num[4] == ELFCLASS64) {
-        Elf64_hdr = mptr;        
-        elf64_object(mptr, Elf64_hdr);
-    }
-    */
     
     if (munmap(mptr, finfo_buf.st_size) == -1) {
         fprintf(stderr, "Error: Could not unmap file.\n");
@@ -160,9 +126,47 @@ int main(int argc, char *argv[]) {
 return 0;
 }
 
+/* Here we read the ELF header into a struct, and checks for the magic number 
+and ELF object class. This function returns 0 if e_ident[EI_NIDENT] has corrupted or 
+invalid data, 1 if e_ident[EI_CLASS] has the value 32-bit, and 2 if e_ident[EI_CLASS] 
+has the value 64-bit. 
+
+This is done instead of compiling for multiple architectures purely out of
+convenience's sake. In the future this software might change to support multiple
+architectures. No promises.
+*/
 int ehdr_sane_check(void *mptr) {
 
+    char            *ptr = mptr;
+    
+    Elf32_Ehdr      hdr = {0}; /* The only difference between the 32 and 64-bit headers are in the Program Header. We can use 32 bit here. */    
+    
+    hdr = *(Elf32_Ehdr*) ptr; /* This is fine for now while we're just printing stuff, it's not efficient but whatever. */
 
+    /* Here we're just doing error checking in case we messed up the binary somehow or it has invalid ELF data (lots of ELF macros ahead, heds up) */
+    /* We're actually skipping over quite a few entries in this header, but it's not necessary to check all of them right now. */
+    if (hdr.e_ident[EI_MAG0] != ELFMAG0 || hdr.e_ident[EI_MAG1] != ELFMAG1 || hdr.e_ident[EI_MAG2] != ELFMAG2 || hdr.e_ident[EI_MAG3] != ELFMAG3) {
+        fprintf(stderr, "Error: ELF magic number seems to be corrupted. Closing program.\n");
+    }
+
+    if (hdr.e_ident[EI_DATA] == ELFDATANONE) {
+        fprintf(stderr, "Error: endianness undefined.\n");
+        return 0;
+    }
+
+    if (hdr.e_ident[EI_CLASS] == ELFCLASSNONE) {
+        fprintf(stderr, "Error: Invalid architecture class.\n");
+        return 0;
+    }
+
+    if (hdr.e_ident[EI_CLASS] == ELFCLASS32) {
+        return 1;
+    }
+
+    if (hdr.e_ident[EI_CLASS] == ELFCLASS64) {
+        return 2;
+    }
+    
 }
 
 int elf32_object(void *mptr) {
