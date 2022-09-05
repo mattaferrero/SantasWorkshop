@@ -139,7 +139,7 @@ int ehdr_sane_check(void *mptr) {
 
     char            *ptr = mptr;
     
-    Elf32_Ehdr      hdr = {0}; /* The only difference between the 32 and 64-bit headers are in the Program Header. We can use 32 bit here. */    
+    Elf32_Ehdr      hdr; /* The only difference between the 32 and 64-bit headers are in the Program Header. We can use 32 bit here. */    
     
     hdr = *(Elf32_Ehdr*) ptr; /* This is fine for now while we're just printing stuff, it's not efficient but whatever. */
 
