@@ -24,7 +24,7 @@
  * 
  */
 
-#include <stdio.h>
+#include <stdio.h> /* auth key test. */
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
