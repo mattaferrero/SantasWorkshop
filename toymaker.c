@@ -13,8 +13,7 @@
  * 1) TO DO: COMMAND LINE ARGS FOR TARGET BINARIES
  * 
  * 2) main() will load the target binary to be modified into memory with mmap(), and call 
- * ehdr_sane_check() to validate each individual header member, and to determine if the
- * binary is 32 or 64 bit. 
+ * ehdr_sane_check() to validate the magic number and object class.
  * 
  * 3) ehdr_sane_check() will print out basic header information similar to objdump -h, then 
  * return to main().
@@ -24,7 +23,7 @@
  * 
  */
 
-#include <stdio.h> /* auth key test. */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -41,20 +40,14 @@
 
 int ehdr_sane_check(void *mptr);
 
-int elf32_object(void *mptr);
-int elf64_object(void *mptr);
-
 int main(int argc, char *argv[]) {  
 
     int                 fd = 0; /* open()'s return val */
     int                 status = 0; /* fstat()'s return val */
     int                 sane = 0; /* ehdr_sane_check()'s return val */
 
-    /* To do: remember what i was gonna do with this here. 
-    unsigned char       magic_num[EI_NIDENT];
-    memset(&magic_num[0], 0, sizeof(magic_num));
-*/
     struct  stat        finfo_buf = {0};
+    Elf64_Ehdr          hdr64 = {0};
 
     void                *mptr = NULL;
 
@@ -64,7 +57,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     
-
     /* mmap() requires a file descriptor, so we are using open() instead for convenience instead of fopen(). */
     fd = open(argv[1], O_RDWR); /* O_RDWR read/write. other flags are read only/write only. */
     if (fd == -1) {
@@ -105,17 +97,10 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    sane = ehdr_sane_check(mptr); 
-    switch(sane) {
-        case 0 :
-            fprintf(stderr, "Fatal Error: Could not parse EI_CLASS. Closing program.\n");
-            break;
-        case 1 :
-            elf32_object(mptr); 
-            break;
-        case 2 :
-            elf64_object(mptr);
-            break; 
+    /* A quick sanity check to make sure our target didn't get corrupted somehow. */
+    if (ehdr_sane_check(mptr) == 1) {
+        fprintf(stderr, "Fatal Error: Could not parse EI_CLASS. Closing program.\n");
+        return 1;
     }
     
     if (munmap(mptr, finfo_buf.st_size) == -1) {
@@ -127,9 +112,8 @@ return 0;
 }
 
 /* Here we read the ELF header into a struct, and checks for the magic number 
-and ELF object class. This function returns 0 if e_ident[EI_NIDENT] has corrupted or 
-invalid data, 1 if e_ident[EI_CLASS] has the value 32-bit, and 2 if e_ident[EI_CLASS] 
-has the value 64-bit. 
+and ELF object class. This function returns 1 if e_ident[EI_NIDENT] has corrupted or 
+invalid data, or 0.  
 
 This is done instead of compiling for multiple architectures purely out of
 convenience's sake. In the future this software might change to support multiple
@@ -146,35 +130,19 @@ int ehdr_sane_check(void *mptr) {
     /* Here we're just doing error checking in case we messed up the binary somehow or it has invalid ELF data (lots of ELF macros ahead, heds up) */
     /* We're actually skipping over quite a few entries in this header, but it's not necessary to check all of them right now. */
     if (hdr.e_ident[EI_MAG0] != ELFMAG0 || hdr.e_ident[EI_MAG1] != ELFMAG1 || hdr.e_ident[EI_MAG2] != ELFMAG2 || hdr.e_ident[EI_MAG3] != ELFMAG3) {
-        fprintf(stderr, "Error: ELF magic number seems to be corrupted. Closing program.\n");
+        fprintf(stderr, "Error: ELF magic number seems to be corrupted.\n");
     }
 
     if (hdr.e_ident[EI_DATA] == ELFDATANONE) {
         fprintf(stderr, "Error: endianness undefined.\n");
-        return 0;
+        return 1;
     }
 
     if (hdr.e_ident[EI_CLASS] == ELFCLASSNONE) {
         fprintf(stderr, "Error: Invalid architecture class.\n");
-        return 0;
-    }
-
-    if (hdr.e_ident[EI_CLASS] == ELFCLASS32) {
         return 1;
     }
-
-    if (hdr.e_ident[EI_CLASS] == ELFCLASS64) {
-        return 2;
-    }
     
+    return 0;
 }
 
-int elf32_object(void *mptr) {
-
-return 0;
-}
-
-int elf64_object(void *mptr) {
-
-return 0;
-}
