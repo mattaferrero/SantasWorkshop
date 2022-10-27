@@ -17,10 +17,6 @@
  * 
  * 3) ehdr_sane_check() will print out basic header information similar to objdump -h, then 
  * return to main().
- * 
- * 4) either elf32_object() or elf64_object() will be called where modification of the
- * binary is permitted.
- * 
  */
 
 #include <stdio.h>
@@ -38,7 +34,7 @@
 
 #define MAX_ARGS        2
 
-int ehdr_sane_check(void *mptr);
+int ehdr_sane_check(Elf64_Ehdr *elfhdr);
 
 int main(int argc, char *argv[]) {  
 
@@ -46,8 +42,14 @@ int main(int argc, char *argv[]) {
     int                 status = 0; /* fstat()'s return val */
     int                 sane = 0; /* ehdr_sane_check()'s return val */
 
-    struct  stat        finfo_buf = {0};
-    Elf64_Ehdr          hdr64 = {0};
+    struct  stat        finfo_buf = {0}; /* Used for mmap() values */
+
+    Elf64_Ehdr          *hdr64 = NULL; /* efl.h provides us with aligned structs to use */
+    Elf64_Phdr          *phdr64 = NULL;
+    Elf64_Shdr          *shdr64 = NULL;
+    Elf64_Sym           *sym64 = NULL;
+    Elf64_Rel           *rel64 = NULL;
+    Elf64_Rela          *rela64 = NULL; 
 
     void                *mptr = NULL;
 
@@ -80,7 +82,7 @@ int main(int argc, char *argv[]) {
      * doesn't actually load the ENTIRE file until we try accessing those parts of it, we don't care about
      * file size and can just do a sanity check for the ELF header contents before mucking around.
      */
-    mptr = mmap(NULL, finfo_buf.st_size, PROT_EXEC, MAP_PRIVATE, fd, 0); /* <-- this needs to be fixed stat. grab file data first. */
+    mptr = mmap(NULL, finfo_buf.st_size, PROT_EXEC, MAP_PRIVATE, fd, 0);
     if (mptr == MAP_FAILED) {
         fprintf(stderr, "Error: Mapping failed.\n");
 
@@ -97,9 +99,14 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    /* A quick sanity check to make sure our target didn't get corrupted somehow. */
-    if (ehdr_sane_check(mptr) == 1) {
-        fprintf(stderr, "Fatal Error: Could not parse EI_CLASS. Closing program.\n");
+    /* 
+     * We will dump each header into their respective structs, but first we will pass the
+     * ELF header to ehdr_sane_check() since the other header locations are found here.
+    */
+    hdr64 = (Elf64_Ehdr *) mptr;
+
+    if (ehdr_sane_check(hdr64) == 1) {
+        fprintf(stderr, "Fatal Error: ELF Header Corrupted!\n");
         return 1;
     }
     
@@ -111,38 +118,75 @@ int main(int argc, char *argv[]) {
 return 0;
 }
 
-/* Here we read the ELF header into a struct, and checks for the magic number 
-and ELF object class. This function returns 1 if e_ident[EI_NIDENT] has corrupted or 
-invalid data, or 0.  
-
-This is done instead of compiling for multiple architectures purely out of
-convenience's sake. In the future this software might change to support multiple
-architectures. No promises.
+/* 
+* Here we read the ELF header into a struct and perform sanity checks for each struct member.
+* This is done because this program modifies binary files directly, and so the possibility of
+* corrupting the target file is high. Relevant values to this program from the target binary 
+* are then printed out similar to objdump.
 */
-int ehdr_sane_check(void *mptr) {
 
-    char            *ptr = mptr;
-    
-    Elf32_Ehdr      hdr; /* The only difference between the 32 and 64-bit headers are in the Program Header. We can use 32 bit here. */    
-    
-    hdr = *(Elf32_Ehdr*) ptr; /* This is fine for now while we're just printing stuff, it's not efficient but whatever. */
+int ehdr_sane_check(Elf64_Ehdr *elfhdr) {
 
-    /* Here we're just doing error checking in case we messed up the binary somehow or it has invalid ELF data (lots of ELF macros ahead, heds up) */
-    /* We're actually skipping over quite a few entries in this header, but it's not necessary to check all of them right now. */
-    if (hdr.e_ident[EI_MAG0] != ELFMAG0 || hdr.e_ident[EI_MAG1] != ELFMAG1 || hdr.e_ident[EI_MAG2] != ELFMAG2 || hdr.e_ident[EI_MAG3] != ELFMAG3) {
-        fprintf(stderr, "Error: ELF magic number seems to be corrupted.\n");
-    }
-
-    if (hdr.e_ident[EI_DATA] == ELFDATANONE) {
-        fprintf(stderr, "Error: endianness undefined.\n");
+    /* 
+     * The first thing we check is e_ident[EI_NIDENT], a 16 byte array with basic file info. 
+     * Some values are irrelevant to this program's execution (such as EI_VERSION) but we are
+     * doing sanity checks anyway for the sake of completion. 
+     */
+    if (elfhdr->e_ident[EI_MAG0] != ELFMAG0 || elfhdr->e_ident[EI_MAG1] != ELFMAG1 || elfhdr->e_ident[EI_MAG2] != ELFMAG2 || elfhdr->e_ident[EI_MAG3] != ELFMAG3) {
+        fprintf(stderr, "Error: ELF magic number is corrupted. Closing program.\n");
         return 1;
     }
 
-    if (hdr.e_ident[EI_CLASS] == ELFCLASSNONE) {
-        fprintf(stderr, "Error: Invalid architecture class.\n");
+    if (elfhdr->e_ident[EI_CLASS] != ELFCLASS64) {
+        fprintf(stderr, "Error: ELF class is not 64-bit. Closing program.\n");
         return 1;
     }
-    
+
+    if (elfhdr->e_ident[EI_DATA] == ELFDATANONE) {
+        fprintf(stderr, "Error: Unknown data format. Closing program.\n");
+        return 1;
+    }
+
+    if (elfhdr->e_ident[EI_VERSION] == EV_NONE) {
+        fprintf(stderr, "Error: Invalid ELF version. Closing program.\n");
+        return 1;
+    }
+
+    /* e_type defines the object file type. We want an executable. */
+    if (elfhdr->e_type != ET_EXEC && elfhdr->e_type != ET_DYN) {
+        fprintf(stderr, "Error: non-executable object type. Closing program.\n");
+        return 1;
+    }
+
+    /* e_version identifies file version. We are skipping e_machine, it's value does not matter. */
+    if (elfhdr->e_version == EV_NONE) {
+        fprintf(stderr, "Error: invalid file version. Closing program.\n");
+        return 1;
+    }
+
+    /* Sanity checking the important parts defining the other headers. */
+    if (elfhdr->e_entry == 0) {
+        fprintf(stderr, "Error: e_entry has no associated entry point. Closing program.\n");
+        return 1;
+    }
+
+    if (elfhdr->e_phoff == 0) {
+        fprintf(stderr, "Error: Program header table does not exist. Closing program.\n");
+        return 1;
+    }
+
+    if (elfhdr->e_shoff == 0) {
+        fprintf(stderr, "Error: Section header table does not exist. Closing program.\n");
+        return 1;
+    }
+
+    /* Todo: table size error checking */
+
+    if (elfhdr->e_shstrndx == SHN_UNDEF) {
+        fprintf(stderr, "Error: Section name string table does not exist. Closing program.\n");
+        return 1;
+    }
+
     return 0;
 }
 
