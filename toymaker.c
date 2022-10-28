@@ -40,8 +40,7 @@ int main(int argc, char *argv[]) {
 
     int                 fd = 0; /* open()'s return val */
     int                 status = 0; /* fstat()'s return val */
-    int                 sane = 0; /* ehdr_sane_check()'s return val */
-
+   
     struct  stat        finfo_buf = {0}; /* Used for mmap() values */
 
     Elf64_Ehdr          *hdr64 = NULL; /* efl.h provides us with aligned structs to use */
@@ -72,7 +71,7 @@ int main(int argc, char *argv[]) {
         
         if (close(fd) == -1) {
             fprintf(stderr, "Error: Could not close file descriptor after fstat() call.\n");
-            return 1; /* Something has gone horribly, horribly wrong somehow. (yes this is redundant, im aware). */
+            return 1; /* Something has gone horribly, horribly wrong somehow (yes this is redundant, im aware). */
         }
         return 1;
     }
@@ -122,10 +121,12 @@ return 0;
 * Here we read the ELF header into a struct and perform sanity checks for each struct member.
 * This is done because this program modifies binary files directly, and so the possibility of
 * corrupting the target file is high. Relevant values to this program from the target binary 
-* are then printed out similar to objdump.
+* are then printed out similar to readelf -h. Returns 1 if any header data is corrupted, or 0.
 */
 
 int ehdr_sane_check(Elf64_Ehdr *elfhdr) {
+
+    int ctr = 0;
 
     /* 
      * The first thing we check is e_ident[EI_NIDENT], a 16 byte array with basic file info. 
@@ -137,9 +138,31 @@ int ehdr_sane_check(Elf64_Ehdr *elfhdr) {
         return 1;
     }
 
+    fprintf(stdout, "ELF Header:\n\tMagic Number: ");
+     
+    /* Printing out contents of e_ident[NE_NIDENT] which includes the magic number.*/
+    while (ctr < EI_NIDENT) {
+        fprintf(stdout, "%x ", elfhdr->e_ident[ctr]);
+        ctr++;
+    }
+
+    switch (elfhdr->e_ident[EI_CLASS]) {
+        case ELFCLASSNONE:      fprintf(stdout, "\n\tClass:\t\t\t\tInvalid Class\n"); break;
+        case ELFCLASS32:        fprintf(stdout, "\n\tClass:\t\t\t\tELF 32\n"); break;
+        case ELFCLASS64:        fprintf(stdout, "\n\tClass:\t\t\t\tELF 64\n"); break;
+        default:                fprintf(stderr, "\n\tCorrupted EI_CLASS\n");
+    }
+
     if (elfhdr->e_ident[EI_CLASS] != ELFCLASS64) {
         fprintf(stderr, "Error: ELF class is not 64-bit. Closing program.\n");
         return 1;
+    }
+
+    switch (elfhdr->e_ident[EI_DATA]) {
+        case ELFDATANONE:       fprintf(stdout, "\tData Format:\t\t\tUnknown Format\n"); break;
+        case ELFDATA2LSB:       fprintf(stdout, "\tData Format:\t\t\tTwo's complement, little endian\n"); break;
+        case ELFDATA2MSB:       fprintf(stdout, "\tData Format:\t\t\tTwo's complement, big endian\n"); break;
+        default:                fprintf(stderr, "\tCorrupted EI_DATA\n");
     }
 
     if (elfhdr->e_ident[EI_DATA] == ELFDATANONE) {
@@ -147,9 +170,24 @@ int ehdr_sane_check(Elf64_Ehdr *elfhdr) {
         return 1;
     }
 
+    switch (elfhdr->e_ident[EI_VERSION]) {
+        case EV_NONE:           fprintf(stdout, "\tELF Version:\t\t\tInvalid Version\n"); break;
+        case EV_CURRENT:        fprintf(stdout, "\tELF Version:\t\t\t%x (current)\n", elfhdr->e_ident[EI_VERSION]); break;
+        default:                fprintf(stderr, "\tCorrupted EI_VERSION\n");
+    }
+
     if (elfhdr->e_ident[EI_VERSION] == EV_NONE) {
         fprintf(stderr, "Error: Invalid ELF version. Closing program.\n");
         return 1;
+    }
+
+    switch (elfhdr->e_type) {
+        case ET_NONE:           fprintf(stdout, "\tObject type:\t\t\tUnknown\n"); break;
+        case ET_REL:            fprintf(stdout, "\tObject type:\t\t\tRelocatable\n"); break;
+        case ET_EXEC:           fprintf(stdout, "\tObject type:\t\t\tExecutable\n"); break;
+        case ET_DYN:            fprintf(stdout, "\tObject type:\t\t\tShared Object\n"); break;
+        case ET_CORE:           fprintf(stdout, "\tObject type:\t\t\tCore File\n"); break;
+        default:                fprintf(stderr, "\tCorrupted e_type\n");
     }
 
     /* e_type defines the object file type. We want an executable. */
@@ -158,11 +196,19 @@ int ehdr_sane_check(Elf64_Ehdr *elfhdr) {
         return 1;
     }
 
+    switch (elfhdr->e_version) {
+        case EV_NONE:           fprintf(stdout, "\tFile Version:\t\t\tInvalid Version\n"); break;
+        case EV_CURRENT:        fprintf(stdout, "\tFile Version:\t\t\t%x (current file version)\n", elfhdr->e_version); break;
+        default:                fprintf(stderr, "\tCorrupted e_version\n");
+    }
+
     /* e_version identifies file version. We are skipping e_machine, it's value does not matter. */
     if (elfhdr->e_version == EV_NONE) {
         fprintf(stderr, "Error: invalid file version. Closing program.\n");
         return 1;
     }
+
+    fprintf(stdout, "\tEntry Point Address:\t\t%lx\n", elfhdr->e_entry);
 
     /* Sanity checking the important parts defining the other headers. */
     if (elfhdr->e_entry == 0) {
@@ -170,10 +216,14 @@ int ehdr_sane_check(Elf64_Ehdr *elfhdr) {
         return 1;
     }
 
+    fprintf(stdout, "\tStart of Program Headers:\t%ld (bytes from start of file)\n", elfhdr->e_phoff);
+
     if (elfhdr->e_phoff == 0) {
         fprintf(stderr, "Error: Program header table does not exist. Closing program.\n");
         return 1;
     }
+
+    fprintf(stdout, "\tStart of Section Headers:\t%ld (bytes from start of file\n", elfhdr->e_shoff);
 
     if (elfhdr->e_shoff == 0) {
         fprintf(stderr, "Error: Section header table does not exist. Closing program.\n");
